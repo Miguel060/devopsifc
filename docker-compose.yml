@@ -1,0 +1,126 @@
+services:
+  app:
+    build: .
+    image: tarefas-api:local
+    container_name: app
+    environment:
+      SPRING_PROFILES_ACTIVE: gelf
+      GRAYLOG_HOST: graylog
+      GRAYLOG_PORT: "12201"
+    ports:
+      - "8080:8080"
+    volumes:
+      - app-data:/app/data
+    depends_on:
+      graylog:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  prometheus:
+    image: docker.io/prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro,z
+    ports:
+      - "9090:9090"
+    depends_on:
+      - app
+
+  grafana:
+    image: docker.io/grafana/grafana:latest
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro,z
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro,z
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+  mongodb:
+    image: docker.io/library/mongo:6.0
+    container_name: mongodb
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ping:1}).ok' | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  opensearch:
+    image: docker.io/opensearchproject/opensearch:2.15.0
+    container_name: opensearch
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+      bootstrap.memory_lock: "true"
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  graylog:
+    image: docker.io/graylog/graylog:6.1
+    container_name: graylog
+    environment:
+      # senha do admin: "admin" (SHA-256 abaixo)
+      GRAYLOG_PASSWORD_SECRET: "umasenhaMuitoLongaParaOGraylog1234567890"
+      GRAYLOG_ROOT_PASSWORD_SHA2: "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918"
+      GRAYLOG_HTTP_BIND_ADDRESS: "0.0.0.0:9000"
+      GRAYLOG_HTTP_EXTERNAL_URI: "http://localhost:9000/"
+      GRAYLOG_ELASTICSEARCH_HOSTS: "http://opensearch:9200"
+      GRAYLOG_MONGODB_URI: "mongodb://mongodb:27017/graylog"
+    ports:
+      - "9000:9000"
+      - "12201:12201/udp"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    volumes:
+      - graylog-data:/usr/share/graylog/data
+
+  graylog-init:
+    image: docker.io/curlimages/curl:latest
+    container_name: graylog-init
+    entrypoint: ["/bin/sh", "/init-input.sh"]
+    volumes:
+      - ./graylog/init-input.sh:/init-input.sh:ro,z
+    depends_on:
+      - graylog
+    restart: "no"
+
+  loadgen:
+    image: docker.io/curlimages/curl:latest
+    container_name: loadgen
+    entrypoint: ["/bin/sh", "/loadgen.sh"]
+    volumes:
+      - ./loadgen/loadgen.sh:/loadgen.sh:ro,z
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  app-data:
+  mongo-data:
+  opensearch-data:
+  graylog-data:

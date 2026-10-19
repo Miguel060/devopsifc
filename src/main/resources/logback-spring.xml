@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+  <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+  <!-- Ativo apenas com SPRING_PROFILES_ACTIVE=gelf (docker compose) -->
+  <springProfile name="gelf">
+    <appender name="GELF" class="biz.paluch.logging.gelf.logback.GelfLogbackAppender">
+      <host>udp:${GRAYLOG_HOST:-graylog}</host>
+      <port>${GRAYLOG_PORT:-12201}</port>
+      <version>1.1</version>
+      <facility>tarefas-api</facility>
+      <extractStackTrace>true</extractStackTrace>
+      <filterStackTrace>true</filterStackTrace>
+      <includeLocation>true</includeLocation>
+      <includeFullMdc>true</includeFullMdc>
+      <maximumMessageSize>8192</maximumMessageSize>
+      <additionalFields>application=tarefas-api</additionalFields>
+    </appender>
+  </springProfile>
+
+  <logger name="com.devops" level="DEBUG"/>
+
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+    <springProfile name="gelf">
+      <appender-ref ref="GELF"/>
+    </springProfile>
+  </root>
+</configuration>
