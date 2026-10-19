@@ -1,2 +1,1 @@
-Coloque aqui os prints (png) usados no README:
  pipeline.png, grafana.png, graylog.png
